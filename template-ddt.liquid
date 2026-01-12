@@ -1,0 +1,319 @@
+<style>
+@page {
+  size: A4;
+  margin: 0;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+}
+
+/* ===================== */
+/* PAGINA                */
+/* ===================== */
+.page {
+  width: 210mm;
+  height: 297mm;
+  padding: 15mm 10mm;
+  box-sizing: border-box;
+  page-break-before: auto;
+  margin-bottom: 40px;
+}
+
+.page:first-child {
+  page-break-before: auto;
+}
+
+/* ===================== */
+/* HEADER                */
+/* ===================== */
+.header {
+  display: flex;
+  gap: 10mm;
+  font-size: 10px;
+  line-height: 1.2;
+  margin-bottom: 6mm;
+}
+
+.header-left,
+.header-right {
+  width: 50%;
+}
+
+.header h3 {
+  margin: 4px 0;
+  font-size: 11px;
+}
+
+/* ===================== */
+/* DOC INFO              */
+/* ===================== */
+.doc-info {
+  display: flex;
+  font-size: 10px;
+}
+
+.doc-info div {
+  flex: 1;
+  padding: 0 0 10px 3px;
+  border-right: 1px solid #d9d7d7;
+  line-height: 14px;
+}
+
+.doc-info div:last-child {
+  border-right: none;
+}
+
+.border-top {
+  border-top: 1px solid #d9d7d7 !important;
+}
+
+.border-bottom {
+  border-bottom: 1px solid #d9d7d7 !important;
+}
+
+.border-left {
+  border-left: 1px solid #d9d7d7 !important;
+}
+
+.border-right {
+  border-right: 1px solid #d9d7d7 !important;
+}
+
+/* ===================== */
+/* TABLE                 */
+/* ===================== */
+.table-header,
+.row {
+  display: flex;
+  font-size: 12px;
+}
+
+.table-header {
+  background: #1a3a52;
+  color: #fff;
+  font-weight: bold;
+  margin-top: 2mm;
+}
+
+.cell {
+  padding: 0 4px;
+}
+
+.c1 { width: 15%; border-left: 1px solid #d9d7d7; border-right: 1px solid #d9d7d7;}
+.c2 { width: 45%; border-right: 1px solid #d9d7d7;}
+.c3 { width: 7%; text-align: center; border-right: 1px solid #d9d7d7;}
+.c4 { width: 8%; text-align: right; border-right: 1px solid #d9d7d7;}
+.c5 {width: 25%; border-right: 1px solid #d9d7d7;}
+
+.footer {
+  padding-top: 6mm;
+}
+
+.next {
+  margin-top: 6mm;
+  text-align: right;
+}
+
+/* ===================== */
+/* PRINT                 */
+/* ===================== */
+@media print {
+  body { background: none; }
+  .page {padding: 15mm 12mm 15mm 4mm;}
+}
+</style>
+
+{% assign rows_per_page = 34 %}
+{% assign row_index = 0 %}
+{% assign page_number = 1 %}
+
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <p><strong>MyFamily S.r.l.</strong><br>
+      Strada Solero 1A - 15048 Valenza (AL) Italy<br>
+      P.I./C.F. 02398620068<br>
+      Capitale Sociale 1.000.000,00 Euro i.v.<br>
+      T+39 0131 950063 | info@myfamily.it<br>
+      Numero di iscrizione Registro A.E.E. IT23090000015289</p>
+      <p><strong>MyFamily USA Inc.</strong><br>
+      9402 American Eagle Way, Suite 100 USA<br>
+      EIN NUMBER: 38-4025715<br>
+      T +1 (888) 550-TAGS | info@myfamilyusa.com</p>
+      <p><strong>MyFamily Brasil Ltda</strong><br>
+      Rua Antonio Zanini, 945, Pavilhao 1 - 95041070 Caixas Du Sul - RS - Sao Jose<br>
+      P.I. 0685885 - C.F. 43857444/0001-50<br>
+      info@myfamilybrasil.com</p>
+    </div>
+
+    <div class="header-right">
+      <h3><strong>Destinatario</strong></h3>
+      <p>{{ destination.name }}</p>
+      <p>{{ destination.address | format_address }}</p>
+      <br>
+      <h3><strong>Destinazione</strong></h3>
+      <p>{{ destination.name }}</p>
+      <p>{{ destination.address | format_address }}</p>
+    </div>
+  </div>
+
+  <!-- DOC INFO -->
+  <div class="doc-info border-top border-left border-right">
+    <div style="padding-bottom:0px;"><strong>Tipo doc.</strong><br>DDT</div>
+    <div style="padding-bottom:0px;"><strong>N. doc.</strong><br>{{ transfer.name }}</div>
+    <div style="padding-bottom:0px;"><strong>Data</strong><br>{{ transfer.dateCreated | date: "%d/%m/%Y" }}</div>
+    <div style="padding-bottom:0px;"><strong>Valuta</strong><br>EUR</div>
+    <div style="padding-bottom:0px;"><strong>Pagina</strong><br>{{ page_number }}</div>
+  </div>
+  <div class="doc-info border-top border-bottom border-left border-right">
+    <div><strong>Pagamento</strong><br></div>
+    <div><strong>Vs. banca:</strong><br></div>
+    <div><strong>Ns. banca:</strong><br></div>
+  </div>
+
+  <!-- TABLE HEADER -->
+  <div class="table-header">
+    <div class="cell c1">Codice</div>
+    <div class="cell c2">Descrizione</div>
+    <div class="cell c3">U.M.</div>
+    <div class="cell c4">Q.tà</div>
+    <div class="cell c5">Note</div>
+  </div>
+
+{% for item in items %}
+
+  <!-- ROW -->
+  <div class="row">
+    <div class="cell c1">{{ item.inventoryItem.sku }}</div>
+    <div class="cell c2">
+      {{ item.inventoryItem.variant.product.title }} -
+      {{ item.inventoryItem.variant.title }}
+    </div>
+    <div class="cell c3">NR</div>
+    <div class="cell c4">{{ item.totalQuantity }}</div>
+    <div class="cell c5"></div>
+  </div>
+  
+  {% assign row_index = row_index | plus: 1 %}
+
+  {% if row_index == rows_per_page and forloop.last == false %}
+
+      <div class="doc-info footer border-top">
+        <div class="border-top border-left"><strong>Trasporto a cura</strong><br></div>
+        <div class="border-top"><strong>Aspetto esteriore dei beni</strong><br></div>
+        <div class="border-top"><strong>Numero colli</strong><br></div>
+        <div class="border-top"><strong>Peso lordo</strong><br></div>
+        <div class="border-top border-right"><strong>Peso netto</strong><br></div>
+      </div>
+      <div class="doc-info border-top border-left border-right">
+        <div><strong>Vettore 1</strong><br></div>
+        <div><strong>Firma Vettore 1</strong><br></div>
+      </div>
+      <div class="doc-info border-top border-left border-right">
+        <div><strong>Vettore 2</strong><br></div>
+        <div><strong>Firma Vettore 2</strong><br></div>
+      </div>
+      <div class="doc-info border-top border-left border-right">
+        <div><strong>Data e ora inizio trasporto</strong><br></div>
+        <div><strong>Firma del Conducente</strong><br></div>
+      </div>
+      <div class="doc-info border-top border-bottom border-left border-right">
+        <div><strong>Note</strong><br></div>
+        <div><strong>Firma del Destinatario</strong><br></div>
+      </div>
+
+      <p class="next"><strong>Segue...</strong></p>
+
+    </div> <!-- fine page -->
+
+    <div class="page">
+
+      <!-- HEADER RIPETUTO -->
+      <div class="header">
+        <div class="header-left">
+          <p><strong>MyFamily S.r.l.</strong><br>
+          Strada Solero 1A - 15048 Valenza (AL) Italy<br>
+          P.I./C.F. 02398620068<br>
+          Capitale Sociale 1.000.000,00 Euro i.v.<br>
+          T+39 0131 950063 | info@myfamily.it<br>
+          Numero di iscrizione Registro A.E.E. IT23090000015289</p>
+          <p><strong>MyFamily USA Inc.</strong><br>
+          9402 American Eagle Way, Suite 100 USA<br>
+          EIN NUMBER: 38-4025715<br>
+          T +1 (888) 550-TAGS | info@myfamilyusa.com</p>
+          <p><strong>MyFamily Brasil Ltda</strong><br>
+          Rua Antonio Zanini, 945, Pavilhao 1 - 95041070 Caixas Du Sul - RS - Sao Jose<br>
+          P.I. 0685885 - C.F. 43857444/0001-50<br>
+          info@myfamilybrasil.com</p>
+        </div>
+
+        <div class="header-right">
+          <h3><strong>Destinatario</strong></h3>
+          <p>{{ destination.name }}</p>
+          <p>{{ destination.address | format_address }}</p>
+          <br>
+          <h3><strong>Destinazione</strong></h3>
+          <p>{{ destination.name }}</p>
+          <p>{{ destination.address | format_address }}</p>
+        </div>
+      </div>
+
+      {% assign page_number = page_number | plus: 1 %}
+
+      <!-- DOC INFO -->
+      <div class="doc-info border-top border-left border-right">
+        <div style="padding-bottom:0px;"><strong>Tipo doc.</strong><br>DDT</div>
+        <div style="padding-bottom:0px;"><strong>N. doc.</strong><br>{{ transfer.name }}</div>
+        <div style="padding-bottom:0px;"><strong>Data</strong><br>{{ transfer.dateCreated | date: "%d/%m/%Y" }}</div>
+        <div style="padding-bottom:0px;"><strong>Valuta</strong><br>EUR</div>
+        <div style="padding-bottom:0px;"><strong>Pagina</strong><br>{{ page_number }}</div>
+      </div>
+      <div class="doc-info border-top border-bottom border-left border-right">
+        <div><strong>Pagamento</strong><br></div>
+        <div><strong>Vs. banca:</strong><br></div>
+        <div><strong>Ns. banca:</strong><br></div>
+      </div>
+
+      <!-- TABLE HEADER -->
+      <div class="table-header">
+        <div class="cell c1">Codice</div>
+        <div class="cell c2">Descrizione</div>
+        <div class="cell c3">U.M.</div>
+        <div class="cell c4">Q.tà</div>
+        <div class="cell c5">Note</div>
+      </div>
+      
+    {% assign row_index = 0 %}
+  {% endif %}
+
+{% endfor %}
+
+  <div class="doc-info footer border-top">
+    <div class="border-top border-left"><strong>Trasporto a cura</strong><br></div>
+    <div class="border-top"><strong>Aspetto esteriore dei beni</strong><br></div>
+    <div class="border-top"><strong>Numero colli</strong><br></div>
+    <div class="border-top"><strong>Peso lordo</strong><br></div>
+    <div class="border-top border-right"><strong>Peso netto</strong><br></div>
+  </div>
+  <div class="doc-info border-top border-left border-right">
+    <div><strong>Vettore 1</strong><br></div>
+    <div><strong>Firma Vettore 1</strong><br></div>
+  </div>
+  <div class="doc-info border-top border-left border-right">
+    <div><strong>Vettore 2</strong><br></div>
+    <div><strong>Firma Vettore 2</strong><br></div>
+  </div>
+  <div class="doc-info border-top border-left border-right">
+    <div><strong>Data e ora inizio trasporto</strong><br></div>
+    <div><strong>Firma del Conducente</strong><br></div>
+  </div>
+  <div class="doc-info border-top border-bottom border-left border-right">
+    <div><strong>Note</strong><br></div>
+    <div><strong>Firma del Destinatario</strong><br></div>
+  </div>
+
+</div>
