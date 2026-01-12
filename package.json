@@ -4,7 +4,6 @@
   "scripts": {
     "build": "remix vite:build",
     "postinstall": "prisma generate",
-    "dev": "export DATABASE_URL=postgresql://neondb_owner:npg_h2Jq9tREwnez@ep-billowing-mountain-ah12lrbg-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require && shopify app dev",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
     "deploy": "shopify app deploy",
