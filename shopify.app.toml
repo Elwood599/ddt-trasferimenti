@@ -2,7 +2,7 @@
 
 client_id = "3e3114922ed84f67922a31dff5422076"
 name = "DDT Trasferimenti"
-application_url = "https://example.com"
+application_url = "https://ddt-trasferimenti.vercel.app"
 embedded = true
 
 [build]
@@ -25,4 +25,4 @@ api_version = "2026-01"
 scopes = "write_products,read_inventory_transfers,read_locations"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://ddt-trasferimenti.vercel.app/api/auth" ]
