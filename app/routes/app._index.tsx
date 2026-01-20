@@ -145,9 +145,9 @@ export default function Index() {
 
     // Logica Tabs predefinite
     if (tabsState[selected]?.id === "tab-received") {
-      setStatusFilter(["RECEIVED"]);
+      setStatusFilter(["TRANSFERRED"]);
     } else if (tabsState[selected]?.id === "tab-notreceived") {
-      setStatusFilter(["IN_TRANSIT"]); // O altro status non ricevuto
+      setStatusFilter(["DRAFT","READY_TO_SHIP","IN_PROGRESS","OTHER","CANCELED"]); // O altro status non ricevuto
     }
 
     // Logica Viste Salvate dal DB
@@ -208,9 +208,12 @@ export default function Index() {
           title="Status"
           titleHidden
           choices={[
-            { label: "Received", value: "RECEIVED" },
-            { label: "In transit", value: "IN_TRANSIT" },
-            { label: "Pending", value: "PENDING" },
+            { label: "Canceled", value: "CANCELED" },
+            { label: "Draft", value: "DRAFT" },
+            { label: "In progress", value: "IN_PROGRESS" },
+            { label: "Other", value: "OTHER" },
+            { label: "Ready to ship", value: "READY_TO_SHIP" },
+            { label: "Transferred", value: "TRANSFERRED" },
           ]}
           selected={statusFilter || []}
           onChange={handleStatusChange}
