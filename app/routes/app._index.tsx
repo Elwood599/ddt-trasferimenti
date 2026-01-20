@@ -114,7 +114,7 @@ export default function Index() {
 
   // --- STATO DEI FILTRI (Separati per chiarezza e compatibilità Polaris) ---
   const [queryValue, setQueryValue] = useState("");
-  const [sortSelected, setSortSelected] = useState(["transfer asc"]);
+  const [sortSelected, setSortSelected] = useState(["transfer desc"]);
   
   const [statusFilter, setStatusFilter] = useState<string[] | undefined>(undefined);
   const [originFilter, setOriginFilter] = useState<string | undefined>(undefined);
@@ -141,7 +141,7 @@ export default function Index() {
     setOriginFilter(undefined);
     setDestinationFilter(undefined);
     setQueryValue("");
-    setSortSelected(["transfer asc"]);
+    setSortSelected(["transfer desc"]);
 
     // Logica Tabs predefinite
     if (tabsState[selected]?.id === "tab-received") {
