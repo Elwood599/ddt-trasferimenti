@@ -5,45 +5,68 @@ import {
   IndexFilters,
   IndexTable,
   Text,
-  TabProps,
-  IndexFiltersProps,
-  useIndexResourceState,
   useSetIndexFiltersMode,
+  IndexFiltersMode,
+  ChoiceList,
+  TextField,
 } from "@shopify/polaris";
-import { ViewIcon, PrintIcon } from "@shopify/polaris-icons";
-import { useFetcher, useLoaderData, useLocation, useNavigate } from "@remix-run/react";
+import type { TabProps, IndexFiltersProps } from "@shopify/polaris";
+import { PrintIcon } from "@shopify/polaris-icons";
+import {
+  useFetcher,
+  useLoaderData,
+  useNavigate,
+  useRevalidator,
+  useSearchParams,
+} from "@remix-run/react";
 import { authenticate } from "app/shopify.server";
-import { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { useCallback, useEffect, useState } from "react";
-import { createApp } from "@shopify/app-bridge";
-import { Redirect } from "@shopify/app-bridge/actions";
+import db from "../db.server";
+import { ActionFunctionArgs, LoaderFunctionArgs, json } from "@remix-run/node";
+import { useEffect, useState, useMemo, useCallback } from "react";
 
 /* ===========================
-   LOADER
+   LOADER & ACTION (INVARIATI)
 =========================== */
+// ... (Mantieni il tuo loader e action esattamente come sono, non servono modifiche lì)
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-
-  return {
-    shop: session.shop,
-    apiKey: process.env.SHOPIFY_API_KEY || "",
-  };
+  const savedViews = await db.inventoryView.findMany({
+    where: { shop: session.shop },
+    orderBy: { createdAt: "asc" },
+  });
+  return json({ shop: session.shop, savedViews });
 };
 
-/* ===========================
-   ACTION → InventoryTransfers
-=========================== */
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const _action = formData.get("_action");
 
-  const first = 15;
-  const form = await request.formData();
-  const after = form.get("after")?.toString() || null;
+  if (_action === "createView") {
+    await db.inventoryView.create({
+      data: {
+        shop: session.shop,
+        name: formData.get("name") as string,
+        tabId: formData.get("tabId") as string,
+        filters: formData.get("filters") as string,
+        query: formData.get("query") as string,
+        sort: formData.get("sort") as string,
+      },
+    });
+    return json({ success: true });
+  }
 
+  if (_action === "deleteView") {
+    const tabId = formData.get("tabId") as string;
+    await db.inventoryView.delete({ where: { tabId } });
+    return json({ success: true });
+  }
+
+  const after = formData.get("after")?.toString() || null;
   const query = `query InventoryTransfers($first: Int!, $after: String) {
     inventoryTransfers(first: $first, after: $after, sortKey: ID) {
       edges {
-        cursor
         node {
           id
           name
@@ -62,265 +85,315 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }`;
 
-  const response = await admin.graphql(query, {
-    variables: { first, after },
+  const response = await admin.graphql(query, { variables: { first: 15, after } });
+  const responseJson = await response.json();
+
+  return json({
+    inventoryTransfers: responseJson.data.inventoryTransfers.edges.map((edge: any) => edge.node),
+    pageInfo: responseJson.data.inventoryTransfers.pageInfo,
   });
- 
-  const json = await response.json();
-  
-  const inventoryTransfers = json.data.inventoryTransfers.edges.map(
-    (edge: any) => edge.node
-  );
-
-  const pageInfo = json.data.inventoryTransfers.pageInfo;
-
-  return { inventoryTransfers, pageInfo };
 };
 
 /* ===========================
-   FRONTEND COMPONENT
+   COMPONENT
 =========================== */
+type TabItem = { id: string; name: string };
+
 export default function Index() {
-  const { shop, apiKey } = useLoaderData<typeof loader>();
-  const fetcher = useFetcher<typeof action>();
+  const { savedViews } = useLoaderData<typeof loader>();
+  const inventoryFetcher = useFetcher<any>();
+  const viewFetcher = useFetcher<any>();
+  const revalidator = useRevalidator();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [transfers, setTransfers] = useState<any[]>([]);
-  const [hasNextPage, setHasNextPage] = useState(false);
-  const [endCursor, setEndCursor] = useState<string | null>(null);
-
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  const getHost = () => {
-    const urlHost = new URLSearchParams(window.location.search).get("host");
-    if (urlHost) {
-      sessionStorage.setItem("shopify_host", urlHost);
-      return urlHost;
-    }
-    return sessionStorage.getItem("shopify_host") || "";
-  };
-
-  /* ------------------ Tabs ------------------ */
-  const [itemStrings, setItemStrings] = useState(["All", "Received", "Not received"]);
-
-  const deleteView = (index: number) => {
-    const newItemStrings = [...itemStrings];
-    newItemStrings.splice(index, 1);
-    setItemStrings(newItemStrings);
-    setSelected(0);
-  };
-
-  const duplicateView = async (name: string) => {
-    setItemStrings([...itemStrings, name]);
-    setSelected(itemStrings.length);
-    await sleep(1);
-    return true;
-  };
-
-  const tabs: TabProps[] = itemStrings.map((item, index) => ({
-    content: item,
-    index,
-    onAction: () => {},
-    id: `${item}-${index}`,
-    isLocked: index === 0,
-    actions:
-      index === 0
-        ? []
-        : [
-            {
-              type: "rename",
-              onAction: () => {},
-              onPrimaryAction: async (value: string): Promise<boolean> => {
-                const newItems = tabs.map((it, idx) =>
-                  idx === index ? value : it.content
-                );
-                setItemStrings(newItems);
-                await sleep(1);
-                return true;
-              },
-            },
-            {
-              type: "duplicate",
-              onPrimaryAction: async (value: string): Promise<boolean> => {
-                duplicateView(value);
-                return true;
-              },
-            },
-            { type: "edit" },
-            {
-              type: "delete",
-              onPrimaryAction: async () => {
-                deleteView(index);
-                return true;
-              },
-            },
-          ],
-  }));
-
+  const [rawTransfers, setRawTransfers] = useState<any[]>([]);
+  const [pageInfo, setPageInfo] = useState({ hasNextPage: false, endCursor: null });
+  const [tabsState, setTabsState] = useState<TabItem[]>([]);
   const [selected, setSelected] = useState(0);
-  const onCreateNewView = async (value: string) => {
-    setItemStrings([...itemStrings, value]);
-    setSelected(itemStrings.length);
-    return true;
-  };
 
-  /* ------------------ Index Filters ------------------ */
-  const sortOptions: IndexFiltersProps["sortOptions"] = [
-    { label: "Quantity", value: "qty asc", directionLabel: "Ascending" },
-    { label: "Quantity", value: "qty desc", directionLabel: "Descending" },
-    { label: "Status", value: "status asc", directionLabel: "A-Z" },
-    { label: "Status", value: "status desc", directionLabel: "Z-A" },
-  ];
+  // --- STATO DEI FILTRI (Separati per chiarezza e compatibilità Polaris) ---
+  const [queryValue, setQueryValue] = useState("");
+  const [sortSelected, setSortSelected] = useState(["transfer asc"]);
+  
+  const [statusFilter, setStatusFilter] = useState<string[] | undefined>(undefined);
+  const [originFilter, setOriginFilter] = useState<string | undefined>(undefined);
+  const [destinationFilter, setDestinationFilter] = useState<string | undefined>(undefined);
 
-  const [sortSelected, setSortSelected] = useState(["qty asc"]);
   const { mode, setMode } = useSetIndexFiltersMode();
 
-  const [queryValue, setQueryValue] = useState("");
-  const handleFiltersQueryChange = useCallback((value: string) => setQueryValue(value), []);
-
-  const appliedFilters: IndexFiltersProps["appliedFilters"] = [];
-
-  const resourceName = { singular: "transfer", plural: "transfers" };
-
-  const { selectedResources, allResourcesSelected, handleSelectionChange } =
-    useIndexResourceState(transfers);
-
-  /* ------------------ Fetch initial transfers ------------------ */
+  /* ---------------- Sync tabs from DB ---------------- */
   useEffect(() => {
-    fetcher.submit({}, { method: "post" });
+    setTabsState([
+      { id: "tab-all", name: "All" },
+      { id: "tab-received", name: "Received" },
+      { id: "tab-notreceived", name: "Not received" },
+      ...savedViews.map(v => ({ id: v.tabId, name: v.name })),
+    ]);
+  }, [savedViews]);
+
+  /* ---------------- Restore filters on tab change ---------------- */
+  useEffect(() => {
+    const view = savedViews.find(v => v.tabId === tabsState[selected]?.id);
+    
+    // Reset di base
+    setStatusFilter(undefined);
+    setOriginFilter(undefined);
+    setDestinationFilter(undefined);
+    setQueryValue("");
+    setSortSelected(["transfer asc"]);
+
+    // Logica Tabs predefinite
+    if (tabsState[selected]?.id === "tab-received") {
+      setStatusFilter(["RECEIVED"]);
+    } else if (tabsState[selected]?.id === "tab-notreceived") {
+      setStatusFilter(["IN_TRANSIT"]); // O altro status non ricevuto
+    }
+
+    // Logica Viste Salvate dal DB
+    if (view) {
+      if (view.query) setQueryValue(view.query);
+      if (view.sort) setSortSelected([view.sort]);
+      
+      // Parsiamo i filtri salvati nel DB
+      if (view.filters) {
+        try {
+          const parsedFilters = JSON.parse(view.filters);
+          parsedFilters.forEach((f: any) => {
+            if (f.key === "status") setStatusFilter(f.value);
+            if (f.key === "origin") setOriginFilter(f.value);
+            if (f.key === "destination") setDestinationFilter(f.value);
+          });
+        } catch (e) {
+          console.error("Error parsing filters", e);
+        }
+      }
+    }
+  }, [selected, tabsState, savedViews]);
+
+  /* ---------------- Fetch inventory ---------------- */
+  useEffect(() => {
+    inventoryFetcher.submit({}, { method: "post" });
   }, []);
 
-  /* ------------------ Process data ------------------ */
   useEffect(() => {
-    if (fetcher.data?.inventoryTransfers) {
-      const raw = fetcher.data.inventoryTransfers;
+    if (inventoryFetcher.data?.inventoryTransfers) {
+      const newTransfers = inventoryFetcher.data.inventoryTransfers;
+      setRawTransfers(prev =>
+        inventoryFetcher.formData?.get("after") ? [...prev, ...newTransfers] : newTransfers
+      );
+      setPageInfo(inventoryFetcher.data.pageInfo);
+    }
+  }, [inventoryFetcher.data]);
 
-      if (fetcher.data.pageInfo) {
-        setHasNextPage(fetcher.data.pageInfo.hasNextPage);
-        setEndCursor(fetcher.data.pageInfo.endCursor);
-      }
+  /* ---------------- Handlers dei Filtri ---------------- */
+  const handleStatusChange = useCallback((value: string[]) => setStatusFilter(value), []);
+  const handleOriginChange = useCallback((value: string) => setOriginFilter(value), []);
+  const handleDestinationChange = useCallback((value: string) => setDestinationFilter(value), []);
 
-      /* ----- Filtering by tabs ----- */
-      const filteredByTab = raw.filter((t: any) => {
-        if (itemStrings[selected] === "Received") return t.receivedQuantity >= t.totalQuantity;
-        if (itemStrings[selected] === "Not received") return t.receivedQuantity < t.totalQuantity;
-        return true;
-      });
+  const handleFiltersClearAll = useCallback(() => {
+    setStatusFilter(undefined);
+    setOriginFilter(undefined);
+    setDestinationFilter(undefined);
+    setQueryValue("");
+  }, []);
 
-      /* ----- Filtering by search ----- */
-      const filteredByQuery = filteredByTab.filter((t: any) => {
-        if (!queryValue) return true;
-        const term = queryValue.toLowerCase();
-        return (
-          t.referenceName?.toLowerCase().includes(term) ||
+  // --- DEFINIZIONE FILTRI (Questo fa apparire il pulsante "Aggiungi filtro") ---
+  const filters = [
+    {
+      key: "status",
+      label: "Status",
+      filter: (
+        <ChoiceList
+          title="Status"
+          titleHidden
+          choices={[
+            { label: "Received", value: "RECEIVED" },
+            { label: "In transit", value: "IN_TRANSIT" },
+            { label: "Pending", value: "PENDING" },
+          ]}
+          selected={statusFilter || []}
+          onChange={handleStatusChange}
+          allowMultiple
+        />
+      ),
+      shortcut: true,
+    },
+    {
+      key: "origin",
+      label: "Origin",
+      filter: (
+        <TextField
+          label="Origin"
+          value={originFilter || ""}
+          onChange={handleOriginChange}
+          autoComplete="off"
+          labelHidden
+        />
+      ),
+    },
+    {
+      key: "destination",
+      label: "Destination",
+      filter: (
+        <TextField
+          label="Destination"
+          value={destinationFilter || ""}
+          onChange={handleDestinationChange}
+          autoComplete="off"
+          labelHidden
+        />
+      ),
+    },
+  ];
+
+  // --- APPLIED FILTERS (Le "bolle" sotto la barra) ---
+  const appliedFilters: IndexFiltersProps["appliedFilters"] = [];
+  
+  if (statusFilter && statusFilter.length > 0) {
+    appliedFilters.push({
+      key: "status",
+      label: `Status: ${statusFilter.join(", ")}`,
+      onRemove: () => setStatusFilter(undefined),
+    });
+  }
+  if (originFilter) {
+    appliedFilters.push({
+      key: "origin",
+      label: `Origin: ${originFilter}`,
+      onRemove: () => setOriginFilter(undefined),
+    });
+  }
+  if (destinationFilter) {
+    appliedFilters.push({
+      key: "destination",
+      label: `Destination: ${destinationFilter}`,
+      onRemove: () => setDestinationFilter(undefined),
+    });
+  }
+
+  /* ---------------- View CRUD ---------------- */
+  const onCreateNewView = async (name: string) => {
+    const tabId = `tab-${crypto.randomUUID()}`;
+    
+    // Ricostruiamo l'array JSON per il DB basato sugli stati attuali
+    const filtersToSave = [];
+    if (statusFilter) filtersToSave.push({ key: 'status', value: statusFilter });
+    if (originFilter) filtersToSave.push({ key: 'origin', value: originFilter });
+    if (destinationFilter) filtersToSave.push({ key: 'destination', value: destinationFilter });
+
+    viewFetcher.submit(
+      {
+        _action: "createView",
+        name,
+        tabId,
+        filters: JSON.stringify(filtersToSave),
+        query: queryValue,
+        sort: sortSelected[0],
+      },
+      { method: "post" }
+    );
+
+    revalidator.revalidate();
+    setMode(IndexFiltersMode.Default);
+    return true;
+  };
+
+  const deleteView = (tabId: string) => {
+    viewFetcher.submit({ _action: "deleteView", tabId }, { method: "post" });
+    setSelected(0);
+    revalidator.revalidate();
+  };
+
+  /* ---------------- Tabs Configuration ---------------- */
+  const tabs: TabProps[] = tabsState.map((tab, index) => ({
+    content: tab.name,
+    index,
+    id: tab.id,
+    isLocked: index <= 2,
+    actions: index > 2 ? [{ type: "delete", onPrimaryAction: () => deleteView(tab.id) }] : [],
+  }));
+
+  /* ---------------- Filtering Logic (Aggiornata) ---------------- */
+  const filteredTransfers = useMemo(() => {
+    let data = [...rawTransfers];
+
+    // Status Filter
+    if (statusFilter && statusFilter.length > 0) {
+      data = data.filter(t => statusFilter.includes(t.status));
+    }
+
+    // Origin Filter
+    if (originFilter) {
+      data = data.filter(t => t.origin?.name?.toLowerCase().includes(originFilter.toLowerCase()));
+    }
+
+    // Destination Filter
+    if (destinationFilter) {
+      data = data.filter(t => t.destination?.name?.toLowerCase().includes(destinationFilter.toLowerCase()));
+    }
+
+    // Query Search
+    if (queryValue) {
+      const term = queryValue.toLowerCase();
+      data = data.filter(
+        t =>
+          t.name.toLowerCase().includes(term) ||
           t.origin?.name?.toLowerCase().includes(term) ||
           t.destination?.name?.toLowerCase().includes(term)
-        );
-      });
-
-      /* ----- Sorting ----- */
-      const sorted = [...filteredByQuery].sort((a, b) => {
-        const [field, dir] = sortSelected[0].split(" ");
-
-        let aVal = 0,
-          bVal = 0;
-
-        if (field === "qty") {
-          aVal = a.totalQuantity;
-          bVal = b.totalQuantity;
-        }
-        if (field === "status") {
-          aVal = a.status;
-          bVal = b.status;
-        }
-
-        if (aVal < bVal) return dir === "asc" ? -1 : 1;
-        if (aVal > bVal) return dir === "asc" ? 1 : -1;
-        return 0;
-      });
-
-      /* ----- Convert to rows for IndexTable ----- */
-        const parsed = sorted.map((t: any) => {
-        
-          const transferId = t.id.split("/").pop()!;
-
-          return {
-            name: (
-              <Text variant="bodyMd" fontWeight="semibold">
-                {t.name}
-              </Text>
-            ),
-            origin: t.origin?.name || "-",
-            destination: t.destination?.name || "-",
-            status: <Badge>{t.status}</Badge>,
-            total: t.totalQuantity,
-            received: t.receivedQuantity,
-            printTransfer: (
-              <Button
-                icon={PrintIcon}
-                onClick={() => {
-                  const host = getHost();
-                  const params = new URLSearchParams();
-                  if (host) params.set("host", host);
-
-                  navigate(`/app/${transferId}/ddttransfer?${params.toString()}`);
-                }}
-              >
-                Print DDT
-              </Button>
-            ),
-          };
-        });
-
-      setTransfers(parsed);
+      );
     }
-  }, [fetcher, selected, queryValue, sortSelected]);
 
-  /* ------------------ Row markup ------------------ */
-  const rowMarkup = transfers.map((t: any, idx: number) => (
-    <IndexTable.Row key={idx} id={String(idx)} position={idx}>
-      <IndexTable.Cell>{t.name}</IndexTable.Cell>
-      <IndexTable.Cell>{t.origin}</IndexTable.Cell>
-      <IndexTable.Cell>{t.destination}</IndexTable.Cell>
-      <IndexTable.Cell>{t.status}</IndexTable.Cell>
-      <IndexTable.Cell>{t.total}</IndexTable.Cell>
-      <IndexTable.Cell>{t.received}</IndexTable.Cell>
-      <IndexTable.Cell>{t.printTransfer}</IndexTable.Cell>
-    </IndexTable.Row>
-  ));
+    // Sorting
+    const [field, dir] = sortSelected[0].split(" ");
+    data.sort((a, b) => {
+      let aVal = field === "qty" ? a.totalQuantity : a.id;
+      let bVal = field === "qty" ? b.totalQuantity : b.id;
+      if (aVal < bVal) return dir === "asc" ? -1 : 1;
+      if (aVal > bVal) return dir === "asc" ? 1 : -1;
+      return 0;
+    });
 
-  /* ===========================
-     RENDER
-  =========================== */
+    return data;
+  }, [rawTransfers, statusFilter, originFilter, destinationFilter, queryValue, sortSelected]);
+
+  /* ---------------- Render ---------------- */
   return (
-    <Card>
+    <Card padding="0">
       <IndexFilters
-        sortOptions={sortOptions}
+        sortOptions={[
+          { label: "Transfer", value: "transfer asc", directionLabel: "Ascending" },
+          { label: "Transfer", value: "transfer desc", directionLabel: "Descending" },
+          { label: "Quantity", value: "qty asc", directionLabel: "Ascending" },
+          { label: "Quantity", value: "qty desc", directionLabel: "Descending" }
+        ]}
         sortSelected={sortSelected}
         queryValue={queryValue}
-        queryPlaceholder="Search transfers"
-        onQueryChange={handleFiltersQueryChange}
+        onQueryChange={setQueryValue}
         onQueryClear={() => setQueryValue("")}
         onSort={setSortSelected}
         primaryAction={{
           type: "save-as",
           onAction: onCreateNewView,
+          disabled: queryValue === "" && !statusFilter && !originFilter && !destinationFilter,
         }}
-        cancelAction={{ onAction: () => {} }}
+        cancelAction={{ onAction: () => setMode(IndexFiltersMode.Default) }}
         tabs={tabs}
         selected={selected}
         onSelect={setSelected}
         canCreateNewView
-        appliedFilters={appliedFilters}
+        onCreateNewView={onCreateNewView}
         mode={mode}
         setMode={setMode}
-        filters={[]}
-        hideFilters
+        // --- QUESTE SONO LE PROPS MAGICHE ---
+        filters={filters} // Definisce cosa appare nel menu "Aggiungi filtro"
+        appliedFilters={appliedFilters} // Definisce le bolle attive
+        onClearAll={handleFiltersClearAll}
       />
 
       <IndexTable
-        resourceName={resourceName}
-        itemCount={transfers.length}
+        resourceName={{ singular: "transfer", plural: "transfers" }}
+        itemCount={filteredTransfers.length}
         headings={[
           { title: "Transfer" },
           { title: "Origin" },
@@ -328,24 +401,49 @@ export default function Index() {
           { title: "Status" },
           { title: "Total qty" },
           { title: "Received qty" },
-          { title: "DDT" },
+          { title: "Action" },
         ]}
         selectable={false}
-        selectedItemsCount={allResourcesSelected ? "All" : selectedResources.length}
-        onSelectionChange={handleSelectionChange}
       >
-        {rowMarkup}
+        {filteredTransfers.map((t, idx) => {
+          
+          const transferId = t.id.split("/").pop();
+
+          return (
+            <IndexTable.Row key={t.id} id={t.id} position={idx}>
+              <IndexTable.Cell>
+                <Text as="span" fontWeight="semibold">{t.name}</Text>
+              </IndexTable.Cell>
+              <IndexTable.Cell>{t.origin?.name || "-"}</IndexTable.Cell>
+              <IndexTable.Cell>{t.destination?.name || "-"}</IndexTable.Cell>
+              <IndexTable.Cell>
+                <Badge tone={t.status === "RECEIVED" ? "success" : "info"}>{t.status}</Badge>
+              </IndexTable.Cell>
+              <IndexTable.Cell>{t.totalQuantity}</IndexTable.Cell>
+              <IndexTable.Cell>{t.receivedQuantity}</IndexTable.Cell>
+              <IndexTable.Cell>
+                <Button 
+                    icon={PrintIcon} 
+                    onClick={() => {
+                      // Mantiene tutti i parametri attuali (host, id_token, etc.)
+                      // e naviga alla pagina corretta
+                      navigate(`/app/${transferId}/ddttransfer?${searchParams.toString()}`);
+                    }}
+                  >
+                  Print
+                </Button>
+              </IndexTable.Cell>
+            </IndexTable.Row>
+          );
+        })}
       </IndexTable>
 
-      {hasNextPage && (
-        <div style={{ padding: "16px", textAlign: "center" }}>
+      {pageInfo.hasNextPage && (
+        <div style={{ padding: 16, display: "flex", justifyContent: "center" }}>
           <Button
-            onClick={() => {
-              const formData = new FormData();
-              formData.append("after", endCursor || "");
-              fetcher.submit(formData, { method: "post" });
-            }}
-            loading={fetcher.state === "submitting"}
+            onClick={() =>
+              inventoryFetcher.submit({ after: pageInfo.endCursor }, { method: "post" })
+            }
           >
             Load more
           </Button>

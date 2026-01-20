@@ -36,3 +36,14 @@ model Session {
   refreshToken        String?   @db.Text
   refreshTokenExpires DateTime?
 }
+
+model InventoryView {
+  id        String   @id @default(cuid())
+  shop      String
+  name      String
+  tabId     String   @unique
+  filters   String
+  query     String?
+  sort      String?
+  createdAt DateTime @default(now())
+}
